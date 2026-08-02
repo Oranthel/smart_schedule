@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">智能日程</string>
+    <string name="tab_home">今日</string>
+    <string name="tab_week">本周</string>
+    <string name="tab_import">导入</string>
+    <string name="tab_plan">计划资料</string>
+    <string name="action_done">完成</string>
+    <string name="action_skip">跳过</string>
+    <string name="action_postpone">延后</string>
+    <string name="action_add">添加</string>
+</resources>
