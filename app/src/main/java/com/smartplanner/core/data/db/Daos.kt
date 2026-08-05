@@ -1,132 +1,109 @@
 package com.smartplanner.core.data.db
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
-import com.smartplanner.core.data.entity.ChangeLog
-import com.smartplanner.core.data.entity.Conflict
-import com.smartplanner.core.data.entity.Course
-import com.smartplanner.core.data.entity.Goal
 import com.smartplanner.core.data.entity.ImportBatch
 import com.smartplanner.core.data.entity.PendingParse
-import com.smartplanner.core.data.entity.RoutineRule
 import com.smartplanner.core.data.entity.ScheduleItem
+import com.smartplanner.core.data.model.ItemStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ScheduleItemDao {
-    @Query("SELECT * FROM schedule_items WHERE dateEpoch = :dateEpoch ORDER BY startMinute IS NULL, startMinute ASC")
-    fun observeDay(dateEpoch: Long): Flow<List<ScheduleItem>>
 
-    @Query("SELECT * FROM schedule_items WHERE dateEpoch BETWEEN :from AND :to ORDER BY dateEpoch, startMinute")
-    fun observeRange(from: Long, to: Long): Flow<List<ScheduleItem>>
+    @Query("SELECT * FROM schedule_item WHERE status != 'CANCELLED' ORDER BY startMinute ASC")
+    fun observeAll(): Flow<List<ScheduleItem>>
 
-    @Query("SELECT * FROM schedule_items WHERE status = :status")
-    fun observeByStatus(status: com.smartplanner.core.data.model.ItemStatus): Flow<List<ScheduleItem>>
+    @Query("SELECT * FROM schedule_item WHERE scheduleDateEpoch = :date AND status != 'CANCELLED' ORDER BY startMinute ASC")
+    fun observeDay(date: Long): Flow<List<ScheduleItem>>
 
-    @Query("SELECT * FROM schedule_items WHERE id = :id")
-    suspend fun getById(id: Long): ScheduleItem?
+    @Query("SELECT * FROM schedule_item WHERE status = 'PENDING' AND importBatchId IS NOT NULL ORDER BY id DESC")
+    fun observePending(): Flow<List<ScheduleItem>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Query("SELECT * FROM schedule_item WHERE importBatchId = :batchId AND status = 'PENDING'")
+    suspend fun findByBatch(batchId: Long): List<ScheduleItem>
+
+    @Query("SELECT * FROM schedule_item WHERE id = :id")
+    suspend fun findById(id: Long): ScheduleItem?
+
+    @Insert
     suspend fun insert(item: ScheduleItem): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(items: List<ScheduleItem>): List<Long>
+    @Insert
+    suspend fun insertAll(items: List<ScheduleItem>)
 
     @Update
     suspend fun update(item: ScheduleItem)
 
-    @Delete
-    suspend fun delete(item: ScheduleItem)
+    @Query("UPDATE schedule_item SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: ItemStatus)
 
-    @Query("UPDATE schedule_items SET status = :status WHERE id = :id")
-    suspend fun setStatus(id: Long, status: com.smartplanner.core.data.model.ItemStatus)
+    @Query("DELETE FROM schedule_item WHERE importBatchId = :batchId AND status = 'PENDING'")
+    suspend fun deletePendingByBatch(batchId: Long)
 
-    @Query("DELETE FROM schedule_items WHERE importBatchId = :batchId")
-    suspend fun deleteByBatch(batchId: Long)
-}
-
-@Dao
-interface RoutineRuleDao {
-    @Query("SELECT * FROM routine_rules WHERE active = 1 ORDER BY startMinute")
-    fun observeActive(): Flow<List<RoutineRule>>
-
-    @Query("SELECT * FROM routine_rules WHERE active = 1")
-    suspend fun getActive(): List<RoutineRule>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(r: RoutineRule): Long
-    @Update suspend fun update(r: RoutineRule)
-    @Delete suspend fun delete(r: RoutineRule)
-    @Query("SELECT * FROM routine_rules WHERE id = :id")
-    suspend fun getById(id: Long): RoutineRule?
-    @Query("DELETE FROM routine_rules WHERE id = :id")
-    suspend fun deleteById(id: Long)
-}
-
-@Dao
-interface CourseDao {
-    @Query("SELECT * FROM courses WHERE archived = 0 ORDER BY weekday, startMinute")
-    fun observeActive(): Flow<List<Course>>
-
-    @Query("SELECT * FROM courses WHERE archived = 0")
-    suspend fun getActive(): List<Course>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(c: Course): Long
-    @Update suspend fun update(c: Course)
-    @Query("UPDATE courses SET archived = 1 WHERE semesterId = :semesterId")
-    suspend fun archiveSemester(semesterId: String)
-    @Query("SELECT * FROM courses WHERE id = :id")
-    suspend fun getById(id: Long): Course?
-    @Query("UPDATE courses SET archived = 1 WHERE id = :id")
-    suspend fun archive(id: Long)
-}
-
-@Dao
-interface GoalDao {
-    @Query("SELECT * FROM goals ORDER BY endEpoch")
-    fun observeAll(): Flow<List<Goal>>
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(g: Goal): Long
-    @Update suspend fun update(g: Goal)
-    @Delete suspend fun delete(g: Goal)
-}
-
-@Dao
-interface ChangeLogDao {
-    @Query("SELECT * FROM change_logs ORDER BY createdAt DESC LIMIT :limit")
-    fun observeRecent(limit: Int = 50): Flow<List<ChangeLog>>
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(log: ChangeLog): Long
-    @Query("DELETE FROM change_logs WHERE createdAt < :before")
-    suspend fun trimOlderThan(before: Long)
+    @Query("DELETE FROM schedule_item WHERE id = :id")
+    suspend fun delete(id: Long)
 }
 
 @Dao
 interface ImportBatchDao {
-    @Query("SELECT * FROM import_batches ORDER BY createdAt DESC")
-    fun observeAll(): Flow<List<ImportBatch>>
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(b: ImportBatch): Long
-    @Update suspend fun update(b: ImportBatch)
-}
 
-@Dao
-interface ConflictDao {
-    @Query("SELECT * FROM conflicts WHERE status = 'OPEN' ORDER BY dateEpoch")
-    fun observeOpen(): Flow<List<Conflict>>
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(c: Conflict): Long
-    @Query("UPDATE conflicts SET status = :status WHERE id = :id")
-    suspend fun setStatus(id: Long, status: String)
+    @Query("SELECT * FROM import_batch ORDER BY id DESC")
+    fun observeAll(): Flow<List<ImportBatch>>
+
+    @Insert
+    suspend fun insert(batch: ImportBatch): Long
+
+    @Query("UPDATE import_batch SET confirmed = 1 WHERE id = :id")
+    suspend fun confirm(id: Long)
+
+    @Query("DELETE FROM import_batch WHERE id = :id")
+    suspend fun delete(id: Long)
 }
 
 @Dao
 interface PendingParseDao {
-    @Query("SELECT * FROM pending_parse ORDER BY createdAt")
+
+    @Query("SELECT * FROM pending_parse ORDER BY id ASC")
     fun observeAll(): Flow<List<PendingParse>>
-    @Query("SELECT * FROM pending_parse ORDER BY createdAt LIMIT :batch")
-    suspend fun takeBatch(batch: Int = 10): List<PendingParse>
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(p: PendingParse): Long
-    @Delete suspend fun delete(p: PendingParse)
+
+    @Query("SELECT * FROM pending_parse ORDER BY id ASC LIMIT :limit")
+    suspend fun takeBatch(limit: Int): List<PendingParse>
+
+    @Insert
+    suspend fun insert(pending: PendingParse): Long
+
+    @Query("DELETE FROM pending_parse WHERE id = :id")
+    suspend fun delete(id: Long)
+
     @Query("UPDATE pending_parse SET attempts = attempts + 1 WHERE id = :id")
     suspend fun bumpAttempts(id: Long)
+}
+
+@Dao
+interface RoutineRuleDao {
+
+    @Query("SELECT * FROM routine_rule WHERE archived = 0 ORDER BY startMinute ASC")
+    fun observeActive(): Flow<List<com.smartplanner.core.data.entity.RoutineRule>>
+
+    @Insert
+    suspend fun insert(rule: com.smartplanner.core.data.entity.RoutineRule): Long
+
+    @Query("DELETE FROM routine_rule WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface CourseDao {
+
+    @Query("SELECT * FROM course WHERE archived = 0 ORDER BY weekday ASC, startMinute ASC")
+    fun observeActive(): Flow<List<com.smartplanner.core.data.entity.Course>>
+
+    @Insert
+    suspend fun insert(course: com.smartplanner.core.data.entity.Course): Long
+
+    @Query("UPDATE course SET archived = 1 WHERE id = :id")
+    suspend fun archive(id: Long)
 }

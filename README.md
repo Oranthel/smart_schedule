@@ -18,7 +18,51 @@ v1.0 已实现核心闭环：导入 → 识别确认 → 区分固定/灵活 →
 | 网络 | Retrofit + Moshi（云端 LLM 解析，v1.0 为桩） |
 | 最低/目标 | minSdk 26 / compileSdk & targetSdk 35 / JVM 17 |
 
-> 不需要 Docker。本地开发仅需 JDK 17+ / Android SDK / Gradle wrapper，推荐直接装 Android Studio（自带 JDK 与 SDK Manager）。
+> 不需要 Docker。本地开发仅需 JDK 17+ / Android SDK / Gradle wrapper，推荐直接装 Android Studio（自带 JDK 与 SDK Manager）。也支持**纯云端构建**（不下载任何工具到本地），见下方。
+
+---
+
+## 纯云端构建（不需要本地安装）
+
+如果你不想在本地安装 Android Studio / JDK / SDK，可以用 GitHub Actions 在云端自动构建 APK：
+
+### 步骤
+
+1. **注册 GitHub 账号** → https://github.com
+2. **新建仓库**（如 `smart-schedule`）→ 选 `Private`
+3. **推送代码到 GitHub**：
+   ```bash
+   # 用 Git 命令行（已装 git 的话）
+   cd d:\app
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git remote add origin https://github.com/<你的用户名>/smart-schedule.git
+   git push -u origin main
+
+   # 或用 GitHub Desktop GUI（https://desktop.github.com）拖入文件夹推送
+   ```
+
+4. **等云端自动构建**：push 后 GitHub Actions 会自动触发 [`.github/workflows/android.yml`](.github/workflows/android.yml)
+   - `build` Job：运行单元测试 + 构建 Debug APK
+   - `release` Job：主分支 push 时额外构建 Release APK
+
+5. **下载 APK**：在 GitHub 仓库 → `Actions` → 点击最新运行 → `Artifacts` → 下载 `debug-apk-*`（或 `release-apk-*`）
+
+### 工作流详情
+
+| Trigger | Job | 产出 |
+|---|---|---|
+| push 任意分支 / PR | build | Debug APK + 单元测试报告 |
+| push main 分支 | release | Release APK |
+
+APK 保留 30 天（Debug）/ 90 天（Release），随时下载。
+
+### 注意
+
+- 首次构建约 3–5 分钟（下载 Gradle 与依赖）；后续缓存命中后约 1 分钟。
+- 如需签名 Release APK，在 GitHub 仓库 `Settings → Secrets and variables → Actions` 添加 `SIGNING_KEY`、`SIGNING_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`，再在工作流中增加签名步骤即可。
 
 ---
 
