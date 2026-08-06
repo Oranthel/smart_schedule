@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -58,6 +59,7 @@ import java.util.Locale
 fun formatHm(minute: Int?): String =
     if (minute == null) "—" else String.format(Locale.getDefault(), "%02d:%02d", minute / 60, minute % 60)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(container: AppContainer) {
     val vm: HomeViewModel = viewModel(factory = HomeViewModel.factory(container.repository))

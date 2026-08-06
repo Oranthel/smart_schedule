@@ -33,12 +33,14 @@ abstract class SmartDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: SmartDatabase? = null
 
-        fun get(context: Context): SmartDatabase = INSTANCE ?: synchronized(this) {
-            INSTANCE ?: Room.databaseBuilder(
-                context.applicationContext(),
-                SmartDatabase::class.java,
-                "smart_planner.db",
-            ).build().also { INSTANCE = it }
+        fun get(context: Context): SmartDatabase {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    SmartDatabase::class.java,
+                    "smart_planner.db",
+                ).build().also { INSTANCE = it }
+            }
         }
     }
 }

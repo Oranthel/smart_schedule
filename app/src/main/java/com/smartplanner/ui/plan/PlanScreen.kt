@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -55,6 +56,7 @@ private fun fmtHm(min: Int): String = String.format(Locale.getDefault(), "%02d:%
 
 private val WEEKDAYS = listOf("一", "二", "三", "四", "五", "六", "日")
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlanScreen(container: AppContainer) {
     val vm: PlanViewModel = viewModel(factory = PlanViewModel.factory(container.repository))
