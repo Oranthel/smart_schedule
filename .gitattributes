@@ -1,2 +1,13 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# 确保 shell 脚本在 Linux CI 上使用 LF 换行（Windows 检出可能为 CRLF 导致 ./gradlew 执行失败）
+gradlew text eol=lf
+gradlew.bat text eol=crlf
+*.sh text eol=lf
+*.kt text eol=lf
+*.kts text eol=lf
+*.xml text eol=lf
+*.properties text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

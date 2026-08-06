@@ -231,7 +231,7 @@ class ScheduleRepository(
         val item = db.scheduleItemDao().findById(id) ?: return@withContext
         db.scheduleItemDao().updateStatus(id, ItemStatus.SKIPPED)
         db.scheduleItemDao().insert(
-            item.copy(id = 0, status = ItemStatus.PENDING, scheduleDateEpoch = item.scheduleDateEpoch?.plusDays(1))
+            item.copy(id = 0, status = ItemStatus.PENDING, scheduleDateEpoch = item.scheduleDateEpoch?.plus(1))
         )
     }
 

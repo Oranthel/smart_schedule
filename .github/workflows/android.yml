@@ -29,6 +29,9 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Fix gradlew line endings (Windows CRLF → LF)
+        run: sed -i 's/\r$//' gradlew
+
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest
 
@@ -71,6 +74,9 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x gradlew
+
+      - name: Fix gradlew line endings (Windows CRLF → LF)
+        run: sed -i 's/\r$//' gradlew
 
       - name: Build release APK
         run: ./gradlew assembleRelease
