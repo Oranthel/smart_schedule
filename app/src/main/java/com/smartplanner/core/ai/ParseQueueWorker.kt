@@ -38,10 +38,10 @@ class ParseQueueWorker(
                 )
                 val items = parsed.map { it.toPendingItem(batchId) }
                 itemDao.insertAll(items)
-                db.pendingParseDao().delete(p)
+                p.id?.let { db.pendingParseDao().delete(it) }
             } catch (e: Exception) {
-                db.pendingParseDao().bumpAttempts(p.id)
-                if (p.attempts >= 3) db.pendingParseDao().delete(p) // 超限丢弃，保留原始可重导
+                p.id?.let { db.pendingParseDao().bumpAttempts(it) }
+                if (p.attempts >= 3) p.id?.let { db.pendingParseDao().delete(it) } // 超限丢弃，保留原始可重导
             }
         }
         return Result.success()
