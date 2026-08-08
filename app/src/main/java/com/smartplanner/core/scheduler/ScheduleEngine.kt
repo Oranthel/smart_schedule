@@ -57,7 +57,7 @@ class ScheduleEngine(
         // 3) 空闲区间 = [dayStart, dayEnd] 减去 (occupying + routineRemains)
         val busy = (occupying + routineRemains).sortedBy { it.startMinute }
         val free = freeIntervals(busy, input.dayStart, input.dayEnd)
-        val totalFree = free.sumOf { it.end - it.start }
+        val totalFree = free.sumOf { it.second - it.first }
 
         // 4) 放置灵活任务
         val placed = mutableListOf<ScheduleEntry>()

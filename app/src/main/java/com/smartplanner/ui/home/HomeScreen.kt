@@ -133,7 +133,7 @@ fun HomeScreen(container: AppContainer) {
 private fun ModeSwitcher(selected: ScheduleMode, onSelect: (ScheduleMode) -> Unit) {
     val options = ScheduleMode.entries
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        options.forEachIndexed { i, m ->
+        for ((i, m) in options.withIndex()) {
             SegmentedButton(
                 selected = m == selected,
                 onClick = { onSelect(m) },

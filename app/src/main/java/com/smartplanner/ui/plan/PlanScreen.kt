@@ -156,8 +156,8 @@ private fun CourseTab(state: PlanUiState, vm: PlanViewModel) {
                     OutlinedTextField(value = end, onValueChange = { end = it }, label = { Text("止") }, singleLine = true, modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    WEEKDAYS.forEachIndexed { i, label ->
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    for ((i, label) in WEEKDAYS.withIndex()) {
                         val wd = i + 1
                         SegmentedButton(
                             selected = weekday == wd,
@@ -214,7 +214,7 @@ private fun PrefTab(state: PlanUiState, vm: PlanViewModel) {
                     Text("调度模式", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        ScheduleMode.entries.forEachIndexed { i, m ->
+                        for ((i, m) in ScheduleMode.entries.withIndex()) {
                             SegmentedButton(
                                 selected = m == state.mode,
                                 onClick = { vm.setMode(m) },

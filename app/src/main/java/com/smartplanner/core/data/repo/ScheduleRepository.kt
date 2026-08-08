@@ -24,6 +24,7 @@ import com.smartplanner.core.scheduler.model.TimeBlock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
@@ -72,14 +73,15 @@ class ScheduleRepository(
         val modeFlow = prefs.scheduleMode
         val freeRatioFlow = prefs.freeRatio
 
-        val job = combine(
-            itemsFlow, routinesFlow, coursesFlow, modeFlow, freeRatioFlow,
-        ) { items, routines, courses, mode, freeRatio ->
-            val rows = planDay(dateEpoch, items, routines, courses, mode, freeRatio)
-            rows
-        }.flowOn(Dispatchers.Default).collect { trySend(it) }
+        val collectJob = launch {
+            combine(
+                itemsFlow, routinesFlow, coursesFlow, modeFlow, freeRatioFlow,
+            ) { items, routines, courses, mode, freeRatio ->
+                planDay(dateEpoch, items, routines, courses, mode, freeRatio)
+            }.flowOn(Dispatchers.Default).collect { trySend(it) }
+        }
 
-        awaitClose { job.cancel() }
+        awaitClose { collectJob.cancel() }
     }.distinctUntilChanged()
 
     fun observeScheduleMode(): Flow<ScheduleMode> = prefs.scheduleMode
