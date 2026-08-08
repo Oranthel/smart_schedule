@@ -152,7 +152,7 @@ private fun BatchCard(
                 Spacer(Modifier.height(8.dp))
                 pending.take(6).forEach { item ->
                     Text(
-                        "· ${item.title}  (${(item.confidence * 100).toInt()}%)" +
+                        "· ${item.title}  (${((item.confidence ?: 0f) * 100).toInt()}%)" +
                             if (item.needsReview) "  待复核" else "",
                         style = MaterialTheme.typography.bodySmall,
                     )
