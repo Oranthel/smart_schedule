@@ -46,7 +46,7 @@ fun SmartRoot(container: AppContainer) {
 
     Scaffold(bottomBar = {
         NavigationBar {
-            SmartRoute.entries.forEach { route ->
+            SmartRoute.values().forEach { route ->
                 val selected = current?.hierarchy?.any { it.route == route.name } == true
                 NavigationBarItem(
                     selected = selected,
