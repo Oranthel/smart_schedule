@@ -48,16 +48,23 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -300
 
-      - name: List build outputs (debug)
+      - name: List build outputs (recursive)
         if: always()
-        run: ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "No debug APK found"
+        run: |
+          echo "=== Recursive listing of app/build/outputs/apk/ ==="
+          find app/build/outputs/apk/ -type f 2>/dev/null || echo "No apk directory found"
+          echo ""
+          echo "=== Listing of app/build/outputs/ ==="
+          ls -laR app/build/outputs/ 2>/dev/null || echo "No outputs directory found"
 
       - name: Upload APK artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: debug-apk-${{ github.run_id }}
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/**/*.apk
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Upload test results
         if: always()
@@ -66,6 +73,7 @@ jobs:
           name: test-results-${{ github.run_id }}
           path: app/build/reports/tests/testDebugUnitTest/
           retention-days: 7
+          if-no-files-found: warn
 
   release:
     name: Build Release APK
@@ -99,13 +107,20 @@ jobs:
       - name: Build release APK
         run: ./gradlew assembleRelease --stacktrace --info 2>&1 | tail -300
 
-      - name: List build outputs (release)
+      - name: List build outputs (recursive)
         if: always()
-        run: ls -la app/build/outputs/apk/release/ 2>/dev/null || echo "No release APK found"
+        run: |
+          echo "=== Recursive listing of app/build/outputs/apk/ ==="
+          find app/build/outputs/apk/ -type f 2>/dev/null || echo "No apk directory found"
+          echo ""
+          echo "=== Listing of app/build/outputs/ ==="
+          ls -laR app/build/outputs/ 2>/dev/null || echo "No outputs directory found"
 
       - name: Upload release APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: release-apk-${{ github.run_id }}
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/**/*.apk
           retention-days: 90
+          if-no-files-found: warn
