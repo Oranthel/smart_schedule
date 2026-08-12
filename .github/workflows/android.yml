@@ -43,11 +43,36 @@ jobs:
         run: ls -la
 
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --stacktrace --info 2>&1 | tail -200
+        run: |
+          set +e
+          ./gradlew testDebugUnitTest --stacktrace --info > build-test.log 2>&1
+          RC=$?
+          set -e
+          echo "--- Last 200 lines of test output (exit=$RC) ---"
+          tail -n 200 build-test.log || true
+          if [ "$RC" -ne 0 ]; then
+            echo "=== TESTS FAILED (exit=$RC) but continue-on-error is enabled ==="
+            exit 0
+          fi
+          echo "=== TESTS PASSED ==="
         continue-on-error: true
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -300
+        run: |
+          set +e
+          ./gradlew assembleDebug --stacktrace --info > build-debug.log 2>&1
+          RC=$?
+          set -e
+          echo "--- Last 300 lines of build output (exit=$RC) ---"
+          tail -n 300 build-debug.log || true
+          if [ "$RC" -ne 0 ]; then
+            echo ""
+            echo "=== GRADLE BUILD DEBUG FAILED (exit=$RC) ==="
+            echo "--- First 100 lines for context ---"
+            head -n 100 build-debug.log || true
+            exit "$RC"
+          fi
+          echo "=== DEBUG BUILD SUCCESSFUL ==="
 
       - name: List build outputs (recursive)
         if: always()
@@ -106,7 +131,21 @@ jobs:
         run: sed -i 's/\r$//' gradlew
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --stacktrace --info 2>&1 | tail -300
+        run: |
+          set +e
+          ./gradlew assembleRelease --stacktrace --info > build-release.log 2>&1
+          RC=$?
+          set -e
+          echo "--- Last 300 lines of build output (exit=$RC) ---"
+          tail -n 300 build-release.log || true
+          if [ "$RC" -ne 0 ]; then
+            echo ""
+            echo "=== GRADLE BUILD RELEASE FAILED (exit=$RC) ==="
+            echo "--- First 100 lines for context ---"
+            head -n 100 build-release.log || true
+            exit "$RC"
+          fi
+          echo "=== RELEASE BUILD SUCCESSFUL ==="
 
       - name: List build outputs (recursive)
         if: always()

@@ -59,15 +59,43 @@ jobs:
           echo "=== app/build.gradle.kts (buildTypes section) ==="
           grep -A 20 "buildTypes" app/build.gradle.kts 2>/dev/null || echo "(not found)"
 
+      - name: Validate Gradle wrapper can launch
+        run: |
+          set -e
+          echo "=== gradle/wrapper contents ==="
+          ls -la gradle/wrapper/
+          echo ""
+          echo "=== Run ./gradlew --version (sanity check wrapper) ==="
+          ./gradlew --version
+
       - name: Build APK (${{ inputs.build_type }})
         run: |
+          set -euo pipefail
+          LOGFILE="build-${{ inputs.build_type }}.log"
           if [ "${{ inputs.build_type }}" = "release" ]; then
             echo "--- Building RELEASE APK ---"
-            ./gradlew assembleRelease --stacktrace --info 2>&1 | tail -400
+            set +e
+            ./gradlew assembleRelease --stacktrace --info > "$LOGFILE" 2>&1
+            RC=$?
+            set -e
           else
             echo "--- Building DEBUG APK ---"
-            ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -400
+            set +e
+            ./gradlew assembleDebug --stacktrace --info > "$LOGFILE" 2>&1
+            RC=$?
+            set -e
           fi
+          echo ""
+          echo "--- Last 400 lines of build output (exit code: $RC) ---"
+          tail -n 400 "$LOGFILE" || true
+          echo ""
+          if [ "$RC" -ne 0 ]; then
+            echo "=== GRADLE BUILD FAILED (exit=$RC) ==="
+            echo "--- First 100 lines for context ---"
+            head -n 100 "$LOGFILE" || true
+            exit "$RC"
+          fi
+          echo "=== GRADLE BUILD SUCCESSFUL ==="
 
       - name: List build outputs (detailed)
         if: always()
