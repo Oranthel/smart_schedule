@@ -19,6 +19,7 @@ on:
 
 env:
   GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4096m"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build-apk:
@@ -96,97 +97,123 @@ jobs:
               || echo "(no output-metadata.json anywhere)"
           fi
 
-      - name: Locate & copy APK artifact
+      - name: Locate & copy APK artifact (simple shell approach)
         id: locate-apk
         if: always()
         run: |
           BUILD_DIR="app/build/outputs/apk/${{ inputs.build_type }}"
           APK_FOUND=""
           APK_COPIED_NAME="app-${{ inputs.build_type }}.apk"
+          mkdir -p artifact-apk
 
-          echo "--- Searching for APK in $BUILD_DIR ---"
-
-          # Strategy 1: read output-metadata.json
-          METADATA="$BUILD_DIR/output-metadata.json"
-          if [ -f "$METADATA" ] && command -v python3 >/dev/null 2>&1; then
-            echo "(Strategy 1: read output-metadata.json)"
-            APK_FOUND=$(python3 -c "
-          import json, sys, glob, os
-          try:
-              with open('$METADATA') as f:
-                  data = json.load(f)
-              elements = data.get('elements', [])
-              for e in elements:
-                  f2 = e.get('outputFile')
-                  if f2:
-                      fp = os.path.join('$BUILD_DIR', f2)
-                      if os.path.isfile(fp):
-                          print(fp)
-                          sys.exit(0)
-          except Exception as ex:
-              print('parse err:', ex, file=sys.stderr)
-              sys.exit(1)
-          sys.exit(1)
-          " 2>/dev/null)
+          echo "--- Listing files in $BUILD_DIR ---"
+          if [ -d "$BUILD_DIR" ]; then
+            ls -la "$BUILD_DIR"
+          else
+            echo "(BUILD_DIR does not exist)"
           fi
 
-          # Strategy 2: glob preferred name
-          if [ -z "$APK_FOUND" ] || [ ! -f "$APK_FOUND" ]; then
-            echo "(Strategy 2: try app-${{ inputs.build_type }}.apk)"
-            if [ -f "$BUILD_DIR/app-${{ inputs.build_type }}.apk" ]; then
-              APK_FOUND="$BUILD_DIR/app-${{ inputs.build_type }}.apk"
-            fi
+          # 1) Try exact known name first
+          EXACT="$BUILD_DIR/app-${{ inputs.build_type }}.apk"
+          echo ""
+          echo "(Check 1) Exact name $EXACT ..."
+          if [ -f "$EXACT" ]; then
+            APK_FOUND="$EXACT"
+            echo "  -> HIT"
           fi
 
-          # Strategy 3: glob any *.apk in build dir (exclude unsigned last only if signed exists)
-          if [ -z "$APK_FOUND" ] || [ ! -f "$APK_FOUND" ]; then
-            echo "(Strategy 3: glob *.apk in build dir, prefer signed over unsigned)"
-            SIGNED=""
-            UNSIGNED=""
+          # 2) Look for any signed (non-unsigned) apk in build dir
+          if [ -z "$APK_FOUND" ]; then
+            echo "(Check 2) Looking for signed *.apk in $BUILD_DIR ..."
             for f in "$BUILD_DIR"/*.apk; do
               [ -f "$f" ] || continue
               case "$f" in
-                *-unsigned.apk) UNSIGNED="$f" ;;
-                *) SIGNED="$f" ;;
+                *-unsigned.apk) ;;
+                *) APK_FOUND="$f"; echo "  -> HIT: $f"; break ;;
               esac
             done
-            if [ -n "$SIGNED" ]; then
-              APK_FOUND="$SIGNED"
-            elif [ -n "$UNSIGNED" ]; then
-              APK_FOUND="$UNSIGNED"
-              APK_COPIED_NAME="app-${{ inputs.build_type }}-unsigned.apk"
+          fi
+
+          # 3) Take unsigned if still nothing
+          if [ -z "$APK_FOUND" ]; then
+            echo "(Check 3) Taking any *.apk in $BUILD_DIR (including -unsigned) ..."
+            for f in "$BUILD_DIR"/*.apk; do
+              [ -f "$f" ] || continue
+              APK_FOUND="$f"
+              echo "  -> HIT: $f"
+              case "$f" in
+                *-unsigned.apk) APK_COPIED_NAME="app-${{ inputs.build_type }}-unsigned.apk" ;;
+              esac
+              break
+            done
+          fi
+
+          # 4) Recurse whole outputs tree as last resort
+          if [ -z "$APK_FOUND" ]; then
+            echo "(Check 4) Recursive find under app/build/ ..."
+            FOUND=$(find app/build -name "*.apk" -type f 2>/dev/null | head -n 1)
+            if [ -n "$FOUND" ] && [ -f "$FOUND" ]; then
+              APK_FOUND="$FOUND"
+              echo "  -> HIT via find: $FOUND"
+              case "$FOUND" in
+                *-unsigned.apk) APK_COPIED_NAME="app-${{ inputs.build_type }}-unsigned.apk" ;;
+              esac
             fi
           fi
 
+          echo ""
           echo "APK_FOUND=$APK_FOUND"
 
           if [ -n "$APK_FOUND" ] && [ -f "$APK_FOUND" ]; then
-            echo "--- Found APK: $APK_FOUND ---"
+            echo "--- FOUND APK: $APK_FOUND ---"
             ls -la "$APK_FOUND"
-            mkdir -p artifact-apk
             cp -f "$APK_FOUND" "artifact-apk/$APK_COPIED_NAME"
-            echo "apk-path=artifact-apk/$APK_COPIED_NAME" >> $GITHUB_OUTPUT
-            echo "apk-name=$APK_COPIED_NAME" >> $GITHUB_OUTPUT
-            echo "status=found" >> $GITHUB_OUTPUT
+            echo "apk-path=artifact-apk/$APK_COPIED_NAME" >> "$GITHUB_OUTPUT"
+            echo "apk-name=$APK_COPIED_NAME" >> "$GITHUB_OUTPUT"
+            echo "status=found" >> "$GITHUB_OUTPUT"
+            echo ""
+            echo "--- artifact-apk/ contents ---"
+            ls -la artifact-apk/
           else
-            echo "--- NO APK FOUND ---"
-            echo "status=not-found" >> $GITHUB_OUTPUT
+            echo "--- NO APK FOUND IN BUILD OUTPUTS ---"
+            echo "status=not-found" >> "$GITHUB_OUTPUT"
+            echo ""
+            echo "--- Check if gradle build task ran successfully above (look for BUILD SUCCESSFUL / BUILD FAILED)"
           fi
 
-      - name: Upload APK artifact
+      - name: Fail if no APK was located
+        if: always() && steps.locate-apk.outputs.status != 'found'
+        run: |
+          echo "======================================"
+          echo "APK 未生成！请检查上面 'Build APK' 步骤的输出"
+          echo "是否有 BUILD SUCCESSFUL 字样？"
+          echo "如果没有，说明 Gradle 编译失败了（即使步骤看起来是绿的也可能被 tail 截断）"
+          echo "======================================"
+          exit 1
+
+      - name: Upload APK artifact (from artifact-apk/)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: app-${{ inputs.build_type }}-apk
           path: artifact-apk/
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: error
 
-      - name: Upload build logs on failure
-        if: failure()
+      - name: Upload APK artifact (fallback: direct glob)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-${{ inputs.build_type }}
+          name: app-${{ inputs.build_type }}-apk-glob
+          path: app/build/outputs/apk/**/*.apk
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload build logs always
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-and-outputs
           path: |
             app/build/reports/
             app/build/outputs/
