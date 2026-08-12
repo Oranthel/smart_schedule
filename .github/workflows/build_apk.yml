@@ -1,0 +1,194 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 构建类型
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+      notes:
+        description: 构建备注（可选）
+        required: false
+        default: ''
+        type: string
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4096m"
+
+jobs:
+  build-apk:
+    name: Build ${{ inputs.build_type }} APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          validate-wrappers: false
+
+      - name: Make gradlew executable & fix line endings
+        run: |
+          chmod +x gradlew
+          sed -i 's/\r$//' gradlew
+
+      - name: Show project structure
+        run: |
+          echo "=== Project root ==="
+          ls -la
+          echo ""
+          echo "=== settings.gradle.kts ==="
+          cat settings.gradle.kts 2>/dev/null || echo "(not found)"
+          echo ""
+          echo "=== app/build.gradle.kts (buildTypes section) ==="
+          grep -A 20 "buildTypes" app/build.gradle.kts 2>/dev/null || echo "(not found)"
+
+      - name: Build APK (${{ inputs.build_type }})
+        run: |
+          if [ "${{ inputs.build_type }}" = "release" ]; then
+            echo "--- Building RELEASE APK ---"
+            ./gradlew assembleRelease --stacktrace --info 2>&1 | tail -400
+          else
+            echo "--- Building DEBUG APK ---"
+            ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -400
+          fi
+
+      - name: List build outputs (detailed)
+        if: always()
+        run: |
+          echo "=================================================="
+          echo "=== Recursive list of app/build/outputs/ ==="
+          echo "=================================================="
+          find app/build/outputs -type f 2>/dev/null | sort || echo "(outputs directory not found)"
+
+          echo ""
+          echo "=================================================="
+          echo "=== APK directory: ${{ inputs.build_type }} ==="
+          echo "=================================================="
+          ls -laR "app/build/outputs/apk/${{ inputs.build_type }}/" 2>/dev/null \
+            || echo "(apk/${{ inputs.build_type }} directory not found)"
+
+          echo ""
+          echo "=================================================="
+          echo "=== Try output-metadata.json ==="
+          echo "=================================================="
+          METADATA="app/build/outputs/apk/${{ inputs.build_type }}/output-metadata.json"
+          if [ -f "$METADATA" ]; then
+            cat "$METADATA"
+          else
+            echo "(output-metadata.json not found, checking all...)"
+            find app/build/outputs -name "output-metadata.json" -exec cat {} \; 2>/dev/null \
+              || echo "(no output-metadata.json anywhere)"
+          fi
+
+      - name: Locate & copy APK artifact
+        id: locate-apk
+        if: always()
+        run: |
+          BUILD_DIR="app/build/outputs/apk/${{ inputs.build_type }}"
+          APK_FOUND=""
+          APK_COPIED_NAME="app-${{ inputs.build_type }}.apk"
+
+          echo "--- Searching for APK in $BUILD_DIR ---"
+
+          # Strategy 1: read output-metadata.json
+          METADATA="$BUILD_DIR/output-metadata.json"
+          if [ -f "$METADATA" ] && command -v python3 >/dev/null 2>&1; then
+            echo "(Strategy 1: read output-metadata.json)"
+            APK_FOUND=$(python3 -c "
+          import json, sys, glob, os
+          try:
+              with open('$METADATA') as f:
+                  data = json.load(f)
+              elements = data.get('elements', [])
+              for e in elements:
+                  f2 = e.get('outputFile')
+                  if f2:
+                      fp = os.path.join('$BUILD_DIR', f2)
+                      if os.path.isfile(fp):
+                          print(fp)
+                          sys.exit(0)
+          except Exception as ex:
+              print('parse err:', ex, file=sys.stderr)
+              sys.exit(1)
+          sys.exit(1)
+          " 2>/dev/null)
+          fi
+
+          # Strategy 2: glob preferred name
+          if [ -z "$APK_FOUND" ] || [ ! -f "$APK_FOUND" ]; then
+            echo "(Strategy 2: try app-${{ inputs.build_type }}.apk)"
+            if [ -f "$BUILD_DIR/app-${{ inputs.build_type }}.apk" ]; then
+              APK_FOUND="$BUILD_DIR/app-${{ inputs.build_type }}.apk"
+            fi
+          fi
+
+          # Strategy 3: glob any *.apk in build dir (exclude unsigned last only if signed exists)
+          if [ -z "$APK_FOUND" ] || [ ! -f "$APK_FOUND" ]; then
+            echo "(Strategy 3: glob *.apk in build dir, prefer signed over unsigned)"
+            SIGNED=""
+            UNSIGNED=""
+            for f in "$BUILD_DIR"/*.apk; do
+              [ -f "$f" ] || continue
+              case "$f" in
+                *-unsigned.apk) UNSIGNED="$f" ;;
+                *) SIGNED="$f" ;;
+              esac
+            done
+            if [ -n "$SIGNED" ]; then
+              APK_FOUND="$SIGNED"
+            elif [ -n "$UNSIGNED" ]; then
+              APK_FOUND="$UNSIGNED"
+              APK_COPIED_NAME="app-${{ inputs.build_type }}-unsigned.apk"
+            fi
+          fi
+
+          echo "APK_FOUND=$APK_FOUND"
+
+          if [ -n "$APK_FOUND" ] && [ -f "$APK_FOUND" ]; then
+            echo "--- Found APK: $APK_FOUND ---"
+            ls -la "$APK_FOUND"
+            mkdir -p artifact-apk
+            cp -f "$APK_FOUND" "artifact-apk/$APK_COPIED_NAME"
+            echo "apk-path=artifact-apk/$APK_COPIED_NAME" >> $GITHUB_OUTPUT
+            echo "apk-name=$APK_COPIED_NAME" >> $GITHUB_OUTPUT
+            echo "status=found" >> $GITHUB_OUTPUT
+          else
+            echo "--- NO APK FOUND ---"
+            echo "status=not-found" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload APK artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ inputs.build_type }}-apk
+          path: artifact-apk/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ inputs.build_type }}
+          path: |
+            app/build/reports/
+            app/build/outputs/
+          retention-days: 7
+          if-no-files-found: ignore
