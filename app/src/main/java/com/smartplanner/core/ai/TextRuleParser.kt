@@ -94,21 +94,21 @@ object TextRuleParser {
 
         // 5. 标题 = 清理后剩余文本（折叠多余空白）
         val title = working.replace(Regex("""\s+"""), " ").trim(' ', '·', '-', '*')
-        if (title.isEmpty()) return null
+        if (title.isEmpty()) null else {
+            val deadline = if (hasDate) todayEpochDay() + dayOffset else null
 
-        val deadline = if (hasDate) todayEpochDay() + dayOffset else null
-
-        ParsedItem(
-            type = type,
-            title = title,
-            precision = precisionFor(type, startMinute, deadline),
-            fixedness = fixednessFor(type),
-            priority = priorityFor(type),
-            startMinute = startMinute,
-            estMinutes = estMinutes,
-            deadlineEpochDay = deadline,
-            confidence = 0.6f,
-        )
+            ParsedItem(
+                type = type,
+                title = title,
+                precision = precisionFor(type, startMinute, deadline),
+                fixedness = fixednessFor(type),
+                priority = priorityFor(type),
+                startMinute = startMinute,
+                estMinutes = estMinutes,
+                deadlineEpochDay = deadline,
+                confidence = 0.6f,
+            )
+        }
     } catch (_: Exception) {
         null
     }
