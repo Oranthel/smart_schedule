@@ -82,8 +82,8 @@ fun PlanScreen(container: AppContainer) {
 @Composable
 private fun RoutineTab(state: PlanUiState, vm: PlanViewModel) {
     var title by remember { mutableStateOf("") }
-    var start by remember { mutableStateOf("23:00") }
-    var end by remember { mutableStateOf("07:00") }
+    var start by remember { mutableIntStateOf(23 * 60) }
+    var end by remember { mutableIntStateOf(7 * 60) }
     var isSleep by remember { mutableStateOf(true) }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -94,8 +94,8 @@ private fun RoutineTab(state: PlanUiState, vm: PlanViewModel) {
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("标题（如：睡眠/午餐）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = start, onValueChange = { start = it }, label = { Text("起 HH:mm") }, singleLine = true, modifier = Modifier.weight(1f))
-                    OutlinedTextField(value = end, onValueChange = { end = it }, label = { Text("止 HH:mm") }, singleLine = true, modifier = Modifier.weight(1f))
+                    com.smartplanner.ui.common.TimeField(minute = start, onPick = { start = it }, label = "起", modifier = Modifier.weight(1f))
+                    com.smartplanner.ui.common.TimeField(minute = end, onPick = { end = it }, label = "止", modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -105,13 +105,12 @@ private fun RoutineTab(state: PlanUiState, vm: PlanViewModel) {
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = {
-                    val s = parseHm(start); val e = parseHm(end)
-                    if (s != null && e != null) vm.addRoutine(title, s, e, isSleep)
-                }, modifier = Modifier.fillMaxWidth()) { Text("添加") }
+                    vm.addRoutine(title, start, end, isSleep)
+                }, enabled = title.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("添加") }
             }
         }
         Spacer(Modifier.height(12.dp))
-        LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(state.routines, key = { it.id }) { r ->
                 RoutineRow(r, onDelete = { vm.deleteRoutine(r.id) })
             }
@@ -140,8 +139,8 @@ private fun RoutineRow(r: RoutineRule, onDelete: () -> Unit) {
 private fun CourseTab(state: PlanUiState, vm: PlanViewModel) {
     var title by remember { mutableStateOf("") }
     var weekday by remember { mutableIntStateOf(1) }
-    var start by remember { mutableStateOf("08:00") }
-    var end by remember { mutableStateOf("09:40") }
+    var start by remember { mutableIntStateOf(8 * 60) }
+    var end by remember { mutableIntStateOf(9 * 60 + 40) }
     var room by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -152,8 +151,8 @@ private fun CourseTab(state: PlanUiState, vm: PlanViewModel) {
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("课程名") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = start, onValueChange = { start = it }, label = { Text("起") }, singleLine = true, modifier = Modifier.weight(1f))
-                    OutlinedTextField(value = end, onValueChange = { end = it }, label = { Text("止") }, singleLine = true, modifier = Modifier.weight(1f))
+                    com.smartplanner.ui.common.TimeField(minute = start, onPick = { start = it }, label = "起", modifier = Modifier.weight(1f))
+                    com.smartplanner.ui.common.TimeField(minute = end, onPick = { end = it }, label = "止", modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(8.dp))
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -170,13 +169,12 @@ private fun CourseTab(state: PlanUiState, vm: PlanViewModel) {
                 OutlinedTextField(value = room, onValueChange = { room = it }, label = { Text("教室（可选）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = {
-                    val s = parseHm(start); val e = parseHm(end)
-                    if (s != null && e != null) vm.addCourse(title, weekday, s, e, room)
-                }, modifier = Modifier.fillMaxWidth()) { Text("添加") }
+                    vm.addCourse(title, weekday, start, end, room)
+                }, enabled = title.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("添加") }
             }
         }
         Spacer(Modifier.height(12.dp))
-        LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(state.courses, key = { it.id }) { c ->
                 CourseRow(c, onArchive = { vm.archiveCourse(c.id) })
             }
@@ -204,8 +202,8 @@ private fun CourseRow(c: Course, onArchive: () -> Unit) {
 
 @Composable
 private fun PrefTab(state: PlanUiState, vm: PlanViewModel) {
-    var dndStart by remember(state.dnd.first) { mutableStateOf(fmtHm(state.dnd.first)) }
-    var dndEnd by remember(state.dnd.second) { mutableStateOf(fmtHm(state.dnd.second)) }
+    var dndStart by remember(state.dnd.first) { mutableIntStateOf(state.dnd.first) }
+    var dndEnd by remember(state.dnd.second) { mutableIntStateOf(state.dnd.second) }
 
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -247,13 +245,12 @@ private fun PrefTab(state: PlanUiState, vm: PlanViewModel) {
                     Text("勿扰时段（仅闹钟级+夜间开关可打断）", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = dndStart, onValueChange = { dndStart = it }, label = { Text("起 HH:mm") }, singleLine = true, modifier = Modifier.weight(1f))
-                        OutlinedTextField(value = dndEnd, onValueChange = { dndEnd = it }, label = { Text("止 HH:mm") }, singleLine = true, modifier = Modifier.weight(1f))
+                        com.smartplanner.ui.common.TimeField(minute = dndStart, onPick = { dndStart = it }, label = "起", modifier = Modifier.weight(1f))
+                        com.smartplanner.ui.common.TimeField(minute = dndEnd, onPick = { dndEnd = it }, label = "止", modifier = Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = {
-                        val s = parseHm(dndStart); val e = parseHm(dndEnd)
-                        if (s != null && e != null) vm.setDnd(s, e)
+                        vm.setDnd(dndStart, dndEnd)
                     }, modifier = Modifier.fillMaxWidth()) { Text("保存勿扰") }
                 }
             }

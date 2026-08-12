@@ -3,7 +3,9 @@ package com.smartplanner.ui.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.CalendarViewDay
+import androidx.compose.material.icons.outlined.CalendarViewMonth
+import androidx.compose.material.icons.outlined.CalendarViewWeek
 import androidx.compose.material.icons.outlined.NoteAdd
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
@@ -24,19 +26,23 @@ import com.smartplanner.di.AppContainer
 import com.smartplanner.ui.home.HomeScreen
 import com.smartplanner.ui.imports.ImportScreen
 import com.smartplanner.ui.plan.PlanScreen
+import com.smartplanner.ui.views.MonthScreen
 import com.smartplanner.ui.views.WeekScreen
+import com.smartplanner.ui.views.YearScreen
 
-/** 顶层路由（对齐 PRD 四主视图：今日/导入/计划资料/周视图）。 */
+/** 顶层路由（日/周/月/年四视图 + 导入 + 计划资料）。 */
 enum class SmartRoute(val title: String) {
-    HOME("今日"),
+    DAY("日"),
+    WEEK("周"),
+    MONTH("月"),
+    YEAR("年"),
     IMPORT("导入"),
-    PLAN("计划资料"),
-    WEEK("周视图"),
+    PLAN("计划"),
 }
 
 /**
  * 单 Activity 架构的根：底部导航 + NavHost。
- * 四个目的地共享同一 [AppContainer]，各自取所需依赖构造 ViewModel。
+ * 六个目的地共享同一 [AppContainer]，各自取所需依赖构造 ViewModel。
  */
 @Composable
 fun SmartRoot(container: AppContainer) {
@@ -46,7 +52,7 @@ fun SmartRoot(container: AppContainer) {
 
     Scaffold(bottomBar = {
         NavigationBar {
-            SmartRoute.values().forEach { route ->
+            SmartRoute.entries.forEach { route ->
                 val selected = current?.hierarchy?.any { it.route == route.name } == true
                 NavigationBarItem(
                     selected = selected,
@@ -60,10 +66,12 @@ fun SmartRoot(container: AppContainer) {
                     icon = {
                         Icon(
                             imageVector = when (route) {
-                                SmartRoute.HOME -> Icons.Outlined.Home
+                                SmartRoute.DAY -> Icons.Outlined.CalendarViewDay
+                                SmartRoute.WEEK -> Icons.Outlined.CalendarViewWeek
+                                SmartRoute.MONTH -> Icons.Outlined.CalendarViewMonth
+                                SmartRoute.YEAR -> Icons.Outlined.CalendarMonth
                                 SmartRoute.IMPORT -> Icons.Outlined.NoteAdd
                                 SmartRoute.PLAN -> Icons.Outlined.Tune
-                                SmartRoute.WEEK -> Icons.Outlined.CalendarMonth
                             },
                             contentDescription = route.title,
                         )
@@ -75,13 +83,15 @@ fun SmartRoot(container: AppContainer) {
     }) { inner ->
         NavHost(
             navController = nav,
-            startDestination = SmartRoute.HOME.name,
+            startDestination = SmartRoute.DAY.name,
             modifier = Modifier.padding(inner),
         ) {
-            composable(SmartRoute.HOME.name) { HomeScreen(container) }
+            composable(SmartRoute.DAY.name) { HomeScreen(container) }
+            composable(SmartRoute.WEEK.name) { WeekScreen(container) }
+            composable(SmartRoute.MONTH.name) { MonthScreen(container) }
+            composable(SmartRoute.YEAR.name) { YearScreen(container) }
             composable(SmartRoute.IMPORT.name) { ImportScreen(container) }
             composable(SmartRoute.PLAN.name) { PlanScreen(container) }
-            composable(SmartRoute.WEEK.name) { WeekScreen(container) }
         }
     }
 }

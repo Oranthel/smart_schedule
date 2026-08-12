@@ -17,6 +17,7 @@ import com.smartplanner.core.data.model.Priority
 import com.smartplanner.core.data.model.ScheduleMode
 import com.smartplanner.core.data.prefs.UserPreferences
 import com.smartplanner.core.scheduler.ScheduleEngine
+import com.smartplanner.core.scheduler.model.ConflictFinding
 import com.smartplanner.core.scheduler.model.DayPlanInput
 import com.smartplanner.core.scheduler.model.FlexibleTask
 import com.smartplanner.core.scheduler.model.Intensity
@@ -26,6 +27,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -61,6 +65,10 @@ class ScheduleRepository(
 ) {
     private val engine = ScheduleEngine()
 
+    /** 最近一次调度的冲突（供 observeConflicts 暴露）。 */
+    private val _conflicts = MutableStateFlow<List<ConflictFinding>>(emptyList())
+    val conflictsFlow: StateFlow<List<ConflictFinding>> = _conflicts.asStateFlow()
+
     /** 活跃的固定/课程/临时/作息条目（已确认非 PENDING）。 */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observeDayPlan(dateEpoch: Long): Flow<List<DayRow>> = callbackFlow {
@@ -89,8 +97,7 @@ class ScheduleRepository(
     fun observeConfidence(): Flow<Pair<Float, Float>> = combine(prefs.confidenceLow, prefs.confidenceHigh) { l, h -> l to h }
     fun observeDnd(): Flow<Pair<Int, Int>> = combine(prefs.dndStart, prefs.dndEnd) { s, e -> s to e }
 
-    fun observeConflicts(): Flow<List<com.smartplanner.core.scheduler.model.ConflictFinding>> =
-        callbackFlow { trySend(emptyList()); awaitClose {} }
+    fun observeConflicts(): Flow<List<ConflictFinding>> = conflictsFlow
 
     fun observeBatches(): Flow<List<ImportBatch>> = db.importBatchDao().observeAll()
     fun observePendingItems(): Flow<List<ScheduleItem>> = db.scheduleItemDao().observePending()
@@ -109,17 +116,23 @@ class ScheduleRepository(
     ): List<DayRow> = withContext(Dispatchers.Default) {
         val dow = LocalDate.ofEpochDay(dateEpoch).dayOfWeek.value
 
-        // 锚点 = 今日确认过的事项 + 匹配星期的课程 + 匹配星期的作息
+        // 活跃事项 = 非 CANCELLED（含 PENDING 待安排、DONE/SKIPPED 历史显示）
+        val active = items.filter { it.status != ItemStatus.CANCELLED }
+        // 参与调度的 = 未完成/未跳过（PENDING/SCHEDULED/IN_PROGRESS）
+        val schedulable = active.filter {
+            it.status in setOf(ItemStatus.PENDING, ItemStatus.SCHEDULED, ItemStatus.IN_PROGRESS)
+        }
+
+        // 锚点 = 有起止时间的可调度事项 + 匹配星期课程 + 匹配星期作息
         val anchors = buildList {
-            items.filter { it.status != ItemStatus.PENDING && it.status != ItemStatus.CANCELLED }.forEach { add(it.toTimeBlock()) }
+            schedulable.filter { it.startMinute != null && it.endMinute != null }.forEach { add(it.toTimeBlock()) }
             courses.filter { it.weekday == dow }.forEach { add(it.toTimeBlock()) }
             routines.filter { it.weekdays.split(",").map { w -> w.trim().toIntOrNull() }.contains(dow) }.forEach { add(it.toTimeBlock()) }
         }.filterNotNull()
 
-        // 灵活任务 = 今日代办/灵活事项
-        val flex = items.filter {
-            it.status != ItemStatus.PENDING && it.status != ItemStatus.CANCELLED &&
-                it.type in setOf(ItemType.TODO, ItemType.GOAL_TASK) && it.estMinutes != null
+        // 灵活任务 = 无固定时间的 TODO/GOAL_TASK（待引擎排入空闲）
+        val flex = schedulable.filter {
+            it.type in setOf(ItemType.TODO, ItemType.GOAL_TASK) && it.estMinutes != null
         }.map { it.toFlexibleTask() }
 
         val result = engine.planDay(
@@ -134,21 +147,51 @@ class ScheduleRepository(
             freeRatioThreshold = freeRatio,
         )
 
-        result.entries.map { e ->
+        // 缓存冲突供 observeConflicts
+        _conflicts.value = result.conflicts
+
+        // itemId → ScheduleItem 映射，用于回填真实状态
+        val itemMap = items.associateBy { it.id }
+
+        // 引擎产出条目 → DayRow（回填真实 status / needsReview）
+        val engineRows = result.entries.map { e ->
+            val item = e.sourceItemId?.let { itemMap[it] }
             DayRow(
                 itemId = e.sourceItemId,
                 title = e.title,
                 startMinute = e.startMinute,
                 endMinute = e.endMinute,
                 type = e.type,
-                status = ItemStatus.SCHEDULED,
+                status = item?.status ?: ItemStatus.SCHEDULED,
                 rest = e.rest,
                 coversRoutine = e.coversRoutine,
-                needsReview = false,
+                needsReview = item?.needsReview ?: false,
                 location = e.location,
             )
         }
+
+        // 已完成/跳过/超期但有起止时间的事项也要显示（引擎未处理）
+        val historical = active.filter {
+            it.status in setOf(ItemStatus.DONE, ItemStatus.SKIPPED, ItemStatus.OVERDUE) &&
+                it.startMinute != null
+        }.map { it.toDayRow() }
+
+        (engineRows + historical).sortedBy { it.startMinute ?: Int.MAX_VALUE }
     }
+
+    /** ScheduleItem → DayRow（用于已完成/跳过的历史条目）。 */
+    private fun ScheduleItem.toDayRow() = DayRow(
+        itemId = id,
+        title = title,
+        startMinute = startMinute,
+        endMinute = endMinute,
+        type = type,
+        status = status,
+        rest = type == ItemType.REST_BUFFER,
+        coversRoutine = false,
+        needsReview = needsReview,
+        location = location,
+    )
 
     /** ScheduleItem → TimeBlock。 */
     private fun ScheduleItem.toTimeBlock(): TimeBlock? {
@@ -277,12 +320,15 @@ class ScheduleRepository(
 
     // ---------- 导入 ----------
 
-    suspend fun importCsv(text: String): Long = withContext(Dispatchers.IO) {
+    suspend fun importCsv(text: String): Long = importText(text, "IMPORT_CSV", "csv-local-1")
+
+    /** 通用导入：按 kind 调用对应解析器，统一入待确认批次。 */
+    suspend fun importText(text: String, kind: String, parseVersion: String = "auto-1"): Long = withContext(Dispatchers.IO) {
         val parseService = TextParseService()
-        val parsed = parseService.parse(text, "IMPORT_CSV")
-        val now = java.time.LocalDateTime.now().toString()
+        val parsed = parseService.parse(text, kind)
+        val now = System.currentTimeMillis().toString()
         val batchId = db.importBatchDao().insert(
-            ImportBatch(sourceType = "IMPORT_CSV", parseVersion = "csv-local-1", parsedCount = parsed.size, createdAt = now)
+            ImportBatch(sourceType = kind, parseVersion = parseVersion, parsedCount = parsed.size, createdAt = now)
         )
         val items = parsed.map { p ->
             ScheduleItem(
@@ -331,7 +377,7 @@ class ScheduleRepository(
         val parseService = TextParseService()
         val parsed = parseService.parse(payload, "QUICK_NOTE")
         if (parsed.isNotEmpty()) {
-            val now = java.time.LocalDateTime.now().toString()
+            val now = System.currentTimeMillis().toString()
             val batchId = db.importBatchDao().insert(
                 ImportBatch(sourceType = "QUICK_NOTE", parseVersion = "llm-v1", parsedCount = parsed.size, createdAt = now)
             )
@@ -361,6 +407,45 @@ class ScheduleRepository(
     suspend fun addRoutine(title: String, weekdays: Set<Int>, start: Int, end: Int, aiNoSchedule: Boolean) = withContext(Dispatchers.IO) {
         db.routineRuleDao().insert(
             RoutineRule(title = title, weekdays = weekdays.joinToString(","), startMinute = start, endMinute = end, aiNoSchedule = aiNoSchedule)
+        )
+    }
+
+    /** 手动添加单条事项（直接入正式日程，不经批次确认）。 */
+    suspend fun addManualItem(
+        type: ItemType,
+        title: String,
+        startMinute: Int?,
+        endMinute: Int?,
+        location: String?,
+        estMinutes: Int?,
+        dateEpoch: Long,
+    ) = withContext(Dispatchers.IO) {
+        val fixedness = when (type) {
+            ItemType.COURSE, ItemType.FIXED -> Fixedness.HARD
+            ItemType.TEMP_ACTIVITY -> Fixedness.SOFT
+            else -> Fixedness.FLEXIBLE
+        }
+        val priority = when (type) {
+            ItemType.COURSE, ItemType.FIXED -> Priority.HARD_COURSE_MEETING_DEADLINE
+            ItemType.TEMP_ACTIVITY -> Priority.TEMP_ACTIVITY
+            ItemType.ROUTINE -> Priority.ROUTINE
+            else -> Priority.FLEXIBLE
+        }
+        val precision = if (startMinute != null && endMinute != null) PrecisionLevel.EXACT else PrecisionLevel.ANYTIME
+        db.scheduleItemDao().insert(
+            ScheduleItem(
+                type = type,
+                title = title,
+                precision = precision,
+                fixedness = fixedness,
+                priority = priority,
+                startMinute = startMinute,
+                endMinute = endMinute,
+                location = location,
+                estMinutes = estMinutes,
+                scheduleDateEpoch = dateEpoch,
+                status = ItemStatus.SCHEDULED,
+            )
         )
     }
 

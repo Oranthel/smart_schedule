@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import com.smartplanner.core.data.entity.Course
 import com.smartplanner.core.data.entity.ImportBatch
 import com.smartplanner.core.data.entity.PendingParse
+import com.smartplanner.core.data.entity.PomodoroRecord
 import com.smartplanner.core.data.entity.RoutineRule
 import com.smartplanner.core.data.entity.ScheduleItem
 
@@ -17,8 +18,9 @@ import com.smartplanner.core.data.entity.ScheduleItem
         Course::class,
         ImportBatch::class,
         PendingParse::class,
+        PomodoroRecord::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 @androidx.room.TypeConverters(Converters::class)
@@ -28,6 +30,7 @@ abstract class SmartDatabase : RoomDatabase() {
     abstract fun courseDao(): CourseDao
     abstract fun importBatchDao(): ImportBatchDao
     abstract fun pendingParseDao(): PendingParseDao
+    abstract fun pomodoroDao(): PomodoroDao
 
     companion object {
         @Volatile
@@ -39,7 +42,7 @@ abstract class SmartDatabase : RoomDatabase() {
                     context.applicationContext,
                     SmartDatabase::class.java,
                     "smart_planner.db",
-                ).build().also { INSTANCE = it }
+                ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
             }
         }
     }

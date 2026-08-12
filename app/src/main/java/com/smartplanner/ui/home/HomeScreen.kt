@@ -22,20 +22,19 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -51,6 +51,8 @@ import com.smartplanner.core.data.model.ItemType
 import com.smartplanner.core.data.model.ScheduleMode
 import com.smartplanner.core.data.repo.DayRow
 import com.smartplanner.di.AppContainer
+import com.smartplanner.ui.common.TimeField
+import com.smartplanner.ui.pomodoro.PomodoroDialog
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -65,6 +67,8 @@ fun HomeScreen(container: AppContainer) {
     val vm: HomeViewModel = viewModel(factory = HomeViewModel.factory(container.repository))
     val state by vm.uiState.collectAsStateWithLifecycle()
     var showAdd by remember { mutableStateOf(false) }
+    // 番茄钟目标（事项 id + 标题），非空时显示倒计时对话框
+    var pomodoroTarget by remember { mutableStateOf<Pair<Long?, String>?>(null) }
 
     Scaffold(
         topBar = {
@@ -98,15 +102,23 @@ fun HomeScreen(container: AppContainer) {
 
             Spacer(Modifier.height(12.dp))
             NextUpCard(state.nextRow, state.freeRatio, state.openConflicts)
+            if (state.openConflicts > 0) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "⚠ 检测到 ${state.openConflicts} 个冲突，请调整固定事项时间",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Spacer(Modifier.height(12.dp))
-            HorizontalDivider()
+            androidx.compose.material3.HorizontalDivider()
             Spacer(Modifier.height(8.dp))
             Text("时间线", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
                 items(state.rows, key = { (it.itemId?.toString() ?: "r") + "-" + it.title + "-" + (it.startMinute ?: -1) }) { row ->
                     DayRowCard(
@@ -114,6 +126,7 @@ fun HomeScreen(container: AppContainer) {
                         onDone = vm::markDone,
                         onSkip = vm::skip,
                         onPostpone = vm::postpone,
+                        onStart = { pomodoroTarget = (row.itemId to row.title) },
                     )
                 }
             }
@@ -125,6 +138,16 @@ fun HomeScreen(container: AppContainer) {
             onDismiss = { showAdd = false },
             onAddTemp = { title, start, dur -> vm.addTempActivity(title, start, dur); showAdd = false },
             onAddTodo = { title, est -> vm.addTodo(title, est); showAdd = false },
+        )
+    }
+
+    pomodoroTarget?.let { (id, title) ->
+        PomodoroDialog(
+            timer = container.pomodoroTimer,
+            repo = container.pomodoroRepository,
+            itemId = id,
+            title = title,
+            onDismiss = { pomodoroTarget = null },
         )
     }
 }
@@ -179,15 +202,29 @@ private fun DayRowCard(
     onDone: (Long) -> Unit,
     onSkip: (Long) -> Unit,
     onPostpone: (Long) -> Unit,
+    onStart: () -> Unit,
 ) {
-    val actionable = row.itemId != null && row.status in setOf(ItemStatus.SCHEDULED, ItemStatus.PENDING)
-    Card(Modifier.fillMaxWidth()) {
+    val actionable = row.itemId != null && row.status in setOf(ItemStatus.SCHEDULED, ItemStatus.PENDING, ItemStatus.IN_PROGRESS)
+    val finished = row.status in setOf(ItemStatus.DONE, ItemStatus.SKIPPED, ItemStatus.OVERDUE)
+    val dimColor = if (finished) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (finished) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
+        ),
+    ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TypeDot(row.type, row.rest)
                 Spacer(Modifier.size(8.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(row.title, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        row.title,
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = dimColor,
+                        textDecoration = if (finished) TextDecoration.LineThrough else TextDecoration.None,
+                    )
                     Text(
                         "${formatHm(row.startMinute)} – ${formatHm(row.endMinute)}" +
                             (row.location?.let { "  ·  $it" } ?: "") +
@@ -197,9 +234,11 @@ private fun DayRowCard(
                     )
                 }
             }
-            if (actionable) {
+            if (actionable && row.type != ItemType.REST_BUFFER) {
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onStart) { Text("开始") }
+                    Spacer(Modifier.weight(1f))
                     TextButton(onClick = { onDone(row.itemId!!) }) { Text("完成") }
                     TextButton(onClick = { onSkip(row.itemId!!) }) { Text("跳过") }
                     TextButton(onClick = { onPostpone(row.itemId!!) }) { Text("延后") }
@@ -215,6 +254,7 @@ private fun statusSuffix(status: ItemStatus, needsReview: Boolean): String {
         ItemStatus.SKIPPED -> "  ·  已跳过"
         ItemStatus.UNSCHEDULED -> "  ·  待排"
         ItemStatus.OVERDUE -> "  ·  超期"
+        ItemStatus.IN_PROGRESS -> "  ·  进行中"
         else -> ""
     }
     return base + if (needsReview) "  ·  待确认" else ""
@@ -245,7 +285,7 @@ private fun AddItemDialog(
 ) {
     var isTemp by remember { mutableStateOf(true) }
     var title by remember { mutableStateOf("") }
-    var timeText by remember { mutableStateOf("09:00") }
+    var startMin by remember { mutableIntStateOf(9 * 60) }
     var duration by remember { mutableStateOf("60") }
 
     AlertDialog(
@@ -261,7 +301,7 @@ private fun AddItemDialog(
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("标题") }, singleLine = true)
                 Spacer(Modifier.height(8.dp))
                 if (isTemp) {
-                    OutlinedTextField(value = timeText, onValueChange = { timeText = it }, label = { Text("开始 HH:mm") }, singleLine = true)
+                    TimeField(minute = startMin, onPick = { startMin = it }, label = "开始时间")
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(value = duration, onValueChange = { duration = it.filter { c -> c.isDigit() } }, label = { Text("时长(分钟)") }, singleLine = true)
                 } else {
@@ -274,10 +314,7 @@ private fun AddItemDialog(
                 enabled = title.isNotBlank() && duration.toIntOrNull()?.let { it > 0 } == true,
                 onClick = {
                     if (isTemp) {
-                        val parts = timeText.split(":")
-                        val h = parts.getOrNull(0)?.toIntOrNull() ?: 9
-                        val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
-                        onAddTemp(title, h * 60 + m, duration.toInt())
+                        onAddTemp(title, startMin, duration.toInt())
                     } else {
                         onAddTodo(title, duration.toInt())
                     }

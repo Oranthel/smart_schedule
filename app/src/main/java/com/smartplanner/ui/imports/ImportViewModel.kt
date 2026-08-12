@@ -51,6 +51,27 @@ class ImportViewModel(private val repo: ScheduleRepository) : ViewModel() {
         message.value = "已导入批次 #$id，请确认"
     }
 
+    /** 通用导入：按格式 kind 调用对应解析器。 */
+    fun importText(text: String, kind: String) = viewModelScope.launch {
+        if (text.isBlank()) { message.value = "请输入内容"; return@launch }
+        val id = repo.importText(text, kind)
+        message.value = "已导入批次 #$id（$kind），请确认"
+    }
+
+    /** 手动添加单条事项（直接入正式日程）。 */
+    fun addManual(
+        type: com.smartplanner.core.data.model.ItemType,
+        title: String,
+        start: Int?,
+        end: Int?,
+        location: String?,
+        est: Int?,
+    ) = viewModelScope.launch {
+        val today = java.time.LocalDate.now().toEpochDay()
+        repo.addManualItem(type, title.trim(), start, end, location, est, today)
+        message.value = "已添加：$title"
+    }
+
     fun confirmBatch(batchId: Long) = viewModelScope.launch {
         repo.confirmBatch(batchId)
         message.value = "批次 #$batchId 已确认并入档"

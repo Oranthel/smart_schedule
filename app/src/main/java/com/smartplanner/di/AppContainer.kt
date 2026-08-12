@@ -12,6 +12,8 @@ import com.smartplanner.core.data.db.SmartDatabase
 import com.smartplanner.core.data.prefs.UserPreferences
 import com.smartplanner.core.data.repo.ScheduleRepository
 import com.smartplanner.core.notifications.ReminderNotifier
+import com.smartplanner.core.pomodoro.PomodoroRepository
+import com.smartplanner.core.pomodoro.PomodoroTimer
 
 /**
  * 手动依赖容器（v1.0 不引入 Hilt/Koin，保持轻量）。
@@ -34,6 +36,12 @@ class AppContainer(private val context: Context) {
     }
 
     val reminderNotifier: ReminderNotifier by lazy { ReminderNotifier(context, preferences) }
+
+    /** 番茄钟记录仓库（持久化历史）。 */
+    val pomodoroRepository: PomodoroRepository by lazy { PomodoroRepository(database.pomodoroDao()) }
+
+    /** 番茄钟计时器单例（进程级，保持当前计时状态）。 */
+    val pomodoroTimer: PomodoroTimer by lazy { PomodoroTimer() }
 
     /** 触发离线解析队列：联网后批量消费 pending_parse（附录 D.4）。 */
     private fun enqueuePendingParse() {

@@ -62,10 +62,23 @@ class PlanViewModel(private val repo: ScheduleRepository) : ViewModel() {
 
     fun archiveCourse(id: Long) = viewModelScope.launch { repo.archiveCourse(id) }
 
-    fun setMode(mode: ScheduleMode) = viewModelScope.launch { repo.setScheduleMode(mode) }
-    fun setFreeRatio(v: Float) = viewModelScope.launch { repo.setFreeRatio(v) }
-    fun setDnd(start: Int, end: Int) = viewModelScope.launch { repo.setDnd(start, end) }
-    fun setConfidence(low: Float, high: Float) = viewModelScope.launch { repo.setConfidence(low, high) }
+    fun setMode(mode: ScheduleMode) = viewModelScope.launch {
+        repo.setScheduleMode(mode); message.value = "调度模式：${modeLabel(mode)}"
+    }
+    fun setFreeRatio(v: Float) = viewModelScope.launch {
+        repo.setFreeRatio(v); message.value = "保留空闲比例已设为 %.0f%%".format(v * 100)
+    }
+    fun setDnd(start: Int, end: Int) = viewModelScope.launch {
+        repo.setDnd(start, end); message.value = "勿扰时段已保存：%s – %s".format(fmtHm(start), fmtHm(end))
+    }
+    fun setConfidence(low: Float, high: Float) = viewModelScope.launch {
+        repo.setConfidence(low, high); message.value = "置信度阈值已保存：低 %.2f / 高 %.2f".format(low, high)
+    }
+
+    private fun modeLabel(m: ScheduleMode) = when (m) {
+        ScheduleMode.CONSERVATIVE -> "保守"; ScheduleMode.BALANCED -> "平衡"; ScheduleMode.ACTIVE -> "进取"
+    }
+    private fun fmtHm(min: Int) = "%02d:%02d".format(min / 60, min % 60)
 
     companion object {
         fun factory(repo: ScheduleRepository) = viewModelFactory {

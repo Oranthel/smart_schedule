@@ -10,22 +10,30 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -44,79 +52,128 @@ fun ImportScreen(container: AppContainer) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     var csvText by remember { mutableStateOf("") }
     var noteText by remember { mutableStateOf("") }
+    // 导入格式：0=CSV 1=JSON 2=Markdown 3=自然语言
+    var formatIdx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val formats = listOf("CSV", "JSON", "Markdown", "自然语言")
+    val formatKinds = listOf("IMPORT_CSV", "IMPORT_JSON", "IMPORT_MD", "IMPORT_TEXT")
+    var showManual by remember { mutableStateOf(false) }
     val timeFmt = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
 
     Scaffold(topBar = { TopAppBar(title = { Text("导入与确认") }) }) { padding ->
-        Column(
-            Modifier
+        // 整页用 LazyColumn 可滚动，避免内嵌 LazyColumn 触发 infinity constraints 崩溃
+        LazyColumn(
+            modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
                 .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedTextField(
-                value = csvText,
-                onValueChange = { csvText = it },
-                label = { Text("粘贴 CSV（标题,类型,开始,结束,位置）") },
-                modifier = Modifier.fillMaxWidth().height(120.dp),
-            )
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { vm.importCsv(csvText); csvText = "" }, modifier = Modifier.fillMaxWidth()) {
-                Text("导入并解析")
+            item {
+                Text("导入格式", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(4.dp))
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    formats.forEachIndexed { i, label ->
+                        SegmentedButton(
+                            selected = formatIdx == i,
+                            onClick = { formatIdx = i },
+                            shape = SegmentedButtonDefaults.itemShape(index = i, count = formats.size),
+                        ) { Text(label) }
+                    }
+                }
             }
+            item {
+                OutlinedTextField(
+                    value = csvText,
+                    onValueChange = { csvText = it },
+                    label = {
+                        Text(when (formatIdx) {
+                            0 -> "粘贴 CSV（标题,类型,开始,结束,位置）"
+                            1 -> "粘贴 JSON 数组"
+                            2 -> "粘贴 Markdown 任务列表（- [ ] 标题）"
+                            else -> "输入自然语言（每行一条）"
+                        })
+                    },
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                )
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            vm.importText(csvText, formatKinds[formatIdx]); csvText = ""
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("导入并解析") }
+                    OutlinedButton(
+                        onClick = { showManual = true },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("手动添加") }
+                }
+            }
+            item { Spacer(Modifier.height(8.dp)) }
+            item { HorizontalDivider() }
+            item { Spacer(Modifier.height(8.dp)) }
 
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = noteText,
-                onValueChange = { noteText = it },
-                label = { Text("快速记录（自然语言）") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { vm.quickNote(noteText); noteText = "" }, modifier = Modifier.fillMaxWidth()) {
-                Text("记录")
+            item {
+                OutlinedTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    label = { Text("快速记录（自然语言）") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            }
+            item {
+                OutlinedButton(
+                    onClick = { vm.quickNote(noteText); noteText = "" },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("记录") }
             }
 
             if (state.pendingParseCount > 0) {
-                Spacer(Modifier.height(8.dp))
-                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        "离线解析队列：${state.pendingParseCount} 条待联网重试",
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                item {
+                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "离线解析队列：${state.pendingParseCount} 条待联网重试",
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
 
             state.message?.let {
-                Spacer(Modifier.height(8.dp))
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-            }
-
-            Spacer(Modifier.height(12.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(8.dp))
-            Text("导入批次", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                items(state.batches, key = { it.id }) { batch ->
-                    BatchCard(
-                        batch = batch,
-                        pending = state.pendingByBatch[batch.id].orEmpty(),
-                        timeFmt = timeFmt,
-                        onConfirm = { vm.confirmBatch(batch.id) },
-                        onUndo = { vm.undoBatch(batch.id) },
-                    )
+                item {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                 }
             }
+
+            item { Spacer(Modifier.height(8.dp)) }
+            item { HorizontalDivider() }
+            item {
+                Text("导入批次", style = MaterialTheme.typography.titleMedium)
+            }
+
+            items(state.batches, key = { it.id }) { batch ->
+                BatchCard(
+                    batch = batch,
+                    pending = state.pendingByBatch[batch.id].orEmpty(),
+                    timeFmt = timeFmt,
+                    onConfirm = { vm.confirmBatch(batch.id) },
+                    onUndo = { vm.undoBatch(batch.id) },
+                )
+            }
         }
+    }
+
+    if (showManual) {
+        ManualAddDialog(
+            onDismiss = { showManual = false },
+            onAdd = { type, title, start, end, location, est ->
+                vm.addManual(type, title, start, end, location, est)
+                showManual = false
+            },
+        )
     }
 }
 
@@ -142,8 +199,10 @@ private fun BatchCard(
                     color = if (batch.confirmed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 )
             }
+            // 安全解析 createdAt（兼容旧的 ISO 字符串与新的 millis 字符串）
+            val timeText = remember(batch.createdAt) { formatBatchTime(batch.createdAt, timeFmt) }
             Text(
-                "${batch.parsedCount} 项  ·  ${timeFmt.format(Date(batch.createdAt))}",
+                "${batch.parsedCount} 项  ·  $timeText",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -166,4 +225,91 @@ private fun BatchCard(
             }
         }
     }
+}
+
+/** 兼容解析批次时间：优先按 millis 解析，失败回退原字符串。 */
+private fun formatBatchTime(raw: String, fmt: SimpleDateFormat): String {
+    if (raw.isBlank()) return ""
+    return runCatching {
+        val millis = raw.toLong()
+        fmt.format(Date(millis))
+    }.getOrElse {
+        // 旧的 ISO 字符串，尝试解析后格式化
+        runCatching {
+            val ldt = java.time.LocalDateTime.parse(raw)
+            fmt.format(Date(ldt.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()))
+        }.getOrElse { raw }
+    }
+}
+
+/** 手动添加事项对话框：选择类型 + 标题 + 时间 + 地点 + 时长。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ManualAddDialog(
+    onDismiss: () -> Unit,
+    onAdd: (type: com.smartplanner.core.data.model.ItemType, title: String, start: Int?, end: Int?, location: String?, est: Int?) -> Unit,
+) {
+    var typeIdx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val types = listOf(
+        com.smartplanner.core.data.model.ItemType.FIXED,
+        com.smartplanner.core.data.model.ItemType.TEMP_ACTIVITY,
+        com.smartplanner.core.data.model.ItemType.TODO,
+        com.smartplanner.core.data.model.ItemType.ROUTINE,
+    )
+    val typeLabels = listOf("固定事项", "临时活动", "代办", "作息")
+    var title by remember { mutableStateOf("") }
+    var hasTime by remember { mutableStateOf(true) }
+    var startMin by remember { androidx.compose.runtime.mutableIntStateOf(9 * 60) }
+    var endMin by remember { androidx.compose.runtime.mutableIntStateOf(10 * 60) }
+    var location by remember { mutableStateOf("") }
+    var est by remember { mutableStateOf("60") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("手动添加事项") },
+        text = {
+            Column {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    typeLabels.forEachIndexed { i, label ->
+                        SegmentedButton(
+                            selected = typeIdx == i,
+                            onClick = { typeIdx = i },
+                            shape = SegmentedButtonDefaults.itemShape(index = i, count = typeLabels.size),
+                        ) { Text(label) }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("标题") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = hasTime, onCheckedChange = { hasTime = it })
+                    Text("  指定时间", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (hasTime) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        com.smartplanner.ui.common.TimeField(minute = startMin, onPick = { startMin = it }, label = "起", modifier = Modifier.weight(1f))
+                        com.smartplanner.ui.common.TimeField(minute = endMin, onPick = { endMin = it }, label = "止", modifier = Modifier.weight(1f))
+                    }
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = est, onValueChange = { est = it.filter { c -> c.isDigit() } }, label = { Text("预估时长(分钟)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = location, onValueChange = { location = it }, label = { Text("地点（可选）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = title.isNotBlank(),
+                onClick = {
+                    val s = if (hasTime) startMin else null
+                    val e = if (hasTime) endMin else null
+                    val es = if (!hasTime) est.toIntOrNull() else null
+                    onAdd(types[typeIdx], title, s, e, location.ifBlank { null }, es)
+                },
+            ) { Text("添加") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
