@@ -48,44 +48,46 @@ object MarkdownParser {
     /** 任意 ` #tag`，用于清理。 */
     private val TAG_PATTERN = Regex("""\s+#[^\s#]+""")
 
-    private fun parseLine(line: String): ParsedItem? = try {
-        val taskMatch = TASK_PATTERN.find(line) ?: return null
-        var body = taskMatch.groupValues[1].trim()
+    private fun parseLine(line: String): ParsedItem? {
+        return try {
+            val taskMatch = TASK_PATTERN.find(line) ?: return null
+            var body = taskMatch.groupValues[1].trim()
 
-        // 1. 提取行尾时间区间
-        var start: Int? = null
-        var end: Int? = null
-        TIME_PATTERN.find(body)?.let { tm ->
-            start = parseHHMM(tm.groupValues[1], tm.groupValues[2])
-            end = parseHHMM(tm.groupValues[3], tm.groupValues[4])
-            body = body.removeSuffix(tm.value).trim()
+            // 1. 提取行尾时间区间
+            var start: Int? = null
+            var end: Int? = null
+            TIME_PATTERN.find(body)?.let { tm ->
+                start = parseHHMM(tm.groupValues[1], tm.groupValues[2])
+                end = parseHHMM(tm.groupValues[3], tm.groupValues[4])
+                body = body.removeSuffix(tm.value).trim()
+            }
+
+            // 2. 提取行尾 deadline
+            var deadline: Long? = null
+            DEADLINE_PATTERN.find(body)?.let { dm ->
+                deadline = parseDate(dm.groupValues[1])
+                body = body.removeSuffix(dm.value).trim()
+            }
+
+            // 3. 清理 #tag
+            body = TAG_PATTERN.replace(body, "").trim()
+            if (body.isEmpty()) return null
+
+            val type = ItemType.TODO
+            ParsedItem(
+                type = type,
+                title = body,
+                precision = precisionFor(type, start, end, deadline),
+                fixedness = fixednessFor(type),
+                priority = priorityFor(type),
+                startMinute = start,
+                endMinute = end,
+                deadlineEpochDay = deadline,
+                confidence = 0.8f,
+            )
+        } catch (_: Exception) {
+            null
         }
-
-        // 2. 提取行尾 deadline
-        var deadline: Long? = null
-        DEADLINE_PATTERN.find(body)?.let { dm ->
-            deadline = parseDate(dm.groupValues[1])
-            body = body.removeSuffix(dm.value).trim()
-        }
-
-        // 3. 清理 #tag
-        body = TAG_PATTERN.replace(body, "").trim()
-        if (body.isEmpty()) return null
-
-        val type = ItemType.TODO
-        ParsedItem(
-            type = type,
-            title = body,
-            precision = precisionFor(type, start, end, deadline),
-            fixedness = fixednessFor(type),
-            priority = priorityFor(type),
-            startMinute = start,
-            endMinute = end,
-            deadlineEpochDay = deadline,
-            confidence = 0.8f,
-        )
-    } catch (_: Exception) {
-        null
     }
 
     /** HH/MM → 当天分钟数；非法返回 null。 */
