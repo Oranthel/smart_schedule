@@ -54,47 +54,49 @@ object TextRuleParser {
     private val KEYWORD_COURSE = listOf("上课", "课程", "course", "lecture")
     private val KEYWORD_TODO = listOf("提醒", "记得", "todo", "待办")
 
-    private fun parseLine(line: String): ParsedItem? = try {
-        if (line.isBlank()) return null
+    private fun parseLine(line: String): ParsedItem? {
+        return try {
+            if (line.isBlank()) return null
 
-        var working = line
+            var working = line
 
-        // 1. 识别日期关键词 → 天数偏移
-        var dayOffset = 0
-        var hasDate = false
-        for ((kw, off) in DATE_OFFSET) {
-            if (kw in working) {
-                dayOffset = off
-                hasDate = true
-                working = working.replace(kw, " ")
-                break
+            // 1. 识别日期关键词 → 天数偏移
+            var dayOffset = 0
+            var hasDate = false
+            for ((kw, off) in DATE_OFFSET) {
+                if (kw in working) {
+                    dayOffset = off
+                    hasDate = true
+                    working = working.replace(kw, " ")
+                    break
+                }
             }
-        }
 
-        // 2. 识别时间 → startMinute
-        var startMinute: Int? = null
-        TIME_PATTERN.find(working)?.let { tm ->
-            startMinute = parseTimeMatch(tm)
-            if (startMinute != null) {
-                working = working.replace(tm.value, " ")
+            // 2. 识别时间 → startMinute
+            var startMinute: Int? = null
+            TIME_PATTERN.find(working)?.let { tm ->
+                startMinute = parseTimeMatch(tm)
+                if (startMinute != null) {
+                    working = working.replace(tm.value, " ")
+                }
             }
-        }
 
-        // 3. 识别时长 → estMinutes
-        var estMinutes: Int? = null
-        DURATION_PATTERN.find(working)?.let { dm ->
-            estMinutes = parseDuration(dm)
-            if (estMinutes != null) {
-                working = working.replace(dm.value, " ")
+            // 3. 识别时长 → estMinutes
+            var estMinutes: Int? = null
+            DURATION_PATTERN.find(working)?.let { dm ->
+                estMinutes = parseDuration(dm)
+                if (estMinutes != null) {
+                    working = working.replace(dm.value, " ")
+                }
             }
-        }
 
-        // 4. 类型识别
-        val type = inferType(working)
+            // 4. 类型识别
+            val type = inferType(working)
 
-        // 5. 标题 = 清理后剩余文本（折叠多余空白）
-        val title = working.replace(Regex("""\s+"""), " ").trim(' ', '·', '-', '*')
-        if (title.isEmpty()) null else {
+            // 5. 标题 = 清理后剩余文本（折叠多余空白）
+            val title = working.replace(Regex("""\s+"""), " ").trim(' ', '·', '-', '*')
+            if (title.isEmpty()) return null
+
             val deadline = if (hasDate) todayEpochDay() + dayOffset else null
 
             ParsedItem(
@@ -108,9 +110,9 @@ object TextRuleParser {
                 deadlineEpochDay = deadline,
                 confidence = 0.6f,
             )
+        } catch (_: Exception) {
+            null
         }
-    } catch (_: Exception) {
-        null
     }
 
     /** 将时间正则匹配结果转为当天分钟数；非法返回 null。 */
